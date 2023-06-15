@@ -1,5 +1,7 @@
 # Chapter 2. eBPF’s “Hello World”
 
+## BCC’s “Hello World”
+
 この本を読むことでeBPFプログラムを書くために複数のフレームワークとライブラリがあることを学びます。
 ウォーミングアップとして、BCC Python frameworkを使用します。このフレームワークは簡単にeBPFを実行できます。
 
@@ -94,18 +96,91 @@ https://docs.kernel.org/bpf/maps.html
 `sockmaps`と`devmaps`はソケットとネットワークデバイスの情報を持ち、ネットワークトラフィックを
 eBPFプログラムにリダイレクトするために使用されます。
 
-次のサンプルではhash table mapの利用例をデモします。
+### Hash Table Map
+
+以下の例ではhash tableにkey-valueのペアを入れます。keyがユーザIDで、valueがそのユーザIDで何回execveが呼ばれたを示す回数です。
+Cのコードを見ましょう。
+
+```
+BPF_HASH(counter_table);    // hash table mapを示すBCCのマクロ定義
+
+int hello(void *ctx) {
+    u64 uid;
+    u64 counter = 0;
+    u64 *p;
+   
+    // bpf_get_current_uid_gid()はkprobイベントのトリガーを引いたプロセスのユーザIDを取得する関数
+    uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;  
+   
+    // ユーザIDをkeyにしてhash tableに既にエントリがあるか検索、値があればポインタが返される   
+    p = counter_table.lookup(&uid);
+    // 該当ユーザIDのエントリがhash tableに存在していれば、hash tableのvalueのポインタをカウンタ変数にセットする
+    if (p != 0) {
+        counter = *p;
+    }
+    // カウンタをインクリメントする
+    counter++;
+    // hash tableのvalueを更新する
+    counter_table.update(&uid, &counter);
+    return 0;
+}
+```
+
+hash tableにアクセスするコードを見てこれはCじゃないと思ったあなたは正しいです。
+C言語では構造体にメソッドを定義することはサポートされていません。
+
+これはBCCがコンパイラにコードを送る前にC言語に書き換えるという良い例です。
+※Arduinoみたいなもんだな
+
+```
+    p = counter_table.lookup(&uid);
+    counter_table.update(&uid, &counter);
+```
+
+C言語のコードは文字列として定義されます。
+プログラムはコンパイルされるとカーネルにロードされ、kprobeによりexecveにattachされます。
+
+```
+b = BPF(text=program)
+syscall = b.get_syscall_fnname("execve")
+b.attach_kprobe(event=syscall, fn_name="hello")
+```
+
+python部分の説明です。
+
+```
+# 2秒毎にprintするためにループ
+while True:
+    sleep(2)
+    s = ""
+    for k,v in b["counter_table"].items(): 
+        s += f"ID {k.value}: {v.value}\t"
+         # BCCは自動的にpythonから参照できるようにオブジェクトを作成してくれるのでvalueを出力する
+    print(s)
+```
+
+プログラムを実行して別ターミナルからコマンドを実行すると以下のように出力される。
+ID 1000がユーザIDで0はrootのIDである。ユーザが何かコマンドを打つと回数は増加する。
+
+```
+ID 1000: 2	ID 0: 2	
+ID 1000: 2	ID 0: 2	
+ID 1000: 2	ID 0: 2	
+ID 1000: 2	ID 0: 2	
+ID 1000: 4	ID 0: 3	
+ID 1000: 4	ID 0: 3	
+ID 1000: 4	ID 0: 3	
+ID 1000: 4	ID 0: 3	
+```
+
+この例ではhash tableを使いeBPFプログラムからユーザ空間のプログラムへデータを受け渡す方法を紹介しました。
+データがkey-valueの値である場合、hash tableはとても便利ですが、ユーザ空間のプログラムはhash tableの値を
+定期的にポーリングする必要があります。
+
+Linuxカーネルは既にユーザ空間にデータを送るperf subsystemをサポートしており、eBPFはperf bufferとBPF ring buffer
+の使用がサポートされています。次にこれを見てみましょう。
 
 
-
-
-
-
-
-
-
-
-
-
+### Perf and Ring Buffer Maps
 
 
