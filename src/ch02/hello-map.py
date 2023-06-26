@@ -4,21 +4,27 @@ from bcc import BPF
 from time import sleep
 
 program = r"""
-BPF_HASH(counter_table);
+BPF_HASH(counter_table);    // hash table mapを示すBCCのマクロ定義
 
 int hello(void *ctx) {
-   u64 uid;
-   u64 counter = 0;
-   u64 *p;
-
-   uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
-   p = counter_table.lookup(&uid);
-   if (p != 0) {
-      counter = *p;
-   }
-   counter++;
-   counter_table.update(&uid, &counter);
-   return 0;
+    u64 uid;
+    u64 counter = 0;
+    u64 *p;
+   
+    // bpf_get_current_uid_gid()はkprobイベントのトリガーを引いたプロセスのユーザIDを取得する関数
+    uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;  
+   
+    // ユーザIDをkeyにしてhash tableに既にエントリがあるか検索、値があればポインタが返される   
+    p = counter_table.lookup(&uid);
+    // 該当ユーザIDのエントリがhash tableに存在していれば、hash tableのvalueのポインタをカウンタ変数にセットする
+    if (p != 0) {
+        counter = *p;
+    }
+    // カウンタをインクリメントする
+    counter++;
+    // hash tableのvalueを更新する
+    counter_table.update(&uid, &counter);
+    return 0;
 }
 """
 
