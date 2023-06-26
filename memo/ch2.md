@@ -183,4 +183,110 @@ Linuxカーネルは既にユーザ空間にデータを送るperf subsystemを�
 
 ### Perf and Ring Buffer Maps
 
+このセクションではBCCの`BPF_PERF_OUTPUT`を使用してより洗礼された`Hello World`プログラムを紹介します。
+これにより任意のデータ構造の情報をperf ring buffer mapに書き込むことができます。
+
+- RING BUFFERS
+Ring BuffersはeBPF固有のものではありません。
+Ring Buffersは輪っか形式書き込みと読み込み領域を持つ論理的なメモリの一部と考えることができます。
+
+前のチャプターで紹介した`Hello World`プログラムは、`execve`システムコールが実行されると、`Hello World`の文字列を
+毎回ターミナルに出力するものでした。
+今回の例では`execve`システムコールのプロセスIDとコマンド名も出力します。
+
+いかがカーネルにロードされるプログラムです。
+
+```
+BPF_PERF_OUTPUT(output);    // BCCで定義されたmapを作るためのマクロ
+
+// データを入れておく構造体
+struct data_t {
+    int pid;
+    int uid;
+    char command[16];
+    char message[12];
+};
+
+int hello(void *ctx) {
+    struct data_t data = {};
+    char message[12] = "Hello world";
+    
+    data.pid = bpf_get_current_pid_tgid() >> 32;
+    data.uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
+    
+    bpf_get_current_comm(&data.command, sizeof(data.command));
+    bpf_probe_read_kernel(&data.message, sizeof(data.message), message);
+    
+    output.perf_submit(ctx, &data, sizeof(data));
+    
+    return 0;
+}
+```
+
+`BPF_PERF_OUTPUT`はBCCで定義されたマップを作るためのマクロです。カーネルからユーザ空間にメッセージを渡すのに使います。
+`output`という変数で定義して使います。
+
+`bpf_get_current_pid_tgid()`はeBPFが実行されるトリガーになったプロセスのプロセスIDを取得するヘルパー関数です。
+`bpf_get_current_pid_tgid()`はプロセスのユーザIDを取得するヘルパー関数です。
+`bpf_get_current_comm()`は`execve`システムコールで実行されたコマンド文字列を取得するヘルパー関数です。
+取得したコマンド文字列を書くフィールドの`&data.command`を引数に渡します。
+
+`bpf_probe_read_kernel()`は`message`変数に格納された"Hello world"をdata構造体にコピーします。
+`output.perf_submit`でdata構造体の内容をmapに出力します。
+
+以下はpythonコードです。
+
+```python
+b = BPF(text=program)
+syscall = b.get_syscall_fnname("execve")
+b.attach_kprobe(event=syscall, fn_name="hello")
+
+
+def print_event(cpu, data, size):
+    data = b["output"].event(data)
+    print(f"{data.pid} {data.uid} {data.command.decode()} {data.message.decode()}")
+
+
+b["output"].open_perf_buffer(print_event)
+while True:
+    b.perf_buffer_poll()
+```
+
+eBPFプログラムをコンパイルして、kprobeで`execve`システムコールにアタッチします。
+
+```python
+b = BPF(text=program)
+syscall = b.get_syscall_fnname("execve")
+b.attach_kprobe(event=syscall, fn_name="hello")
+```
+
+標準出力をするコールバック関数です。
+BCCがmapに書き込まれたdata構造体から値を取得してくれます。
+
+```python
+def print_event(cpu, data, size):
+    data = b["output"].event(data)
+    print(f"{data.pid} {data.uid} {data.command.decode()} {data.message.decode()}")
+```
+
+`open_perf_buffer`でring bufferを開きます。
+引数にコールバック関数として`print_event`関数を渡しています。ring bufferに読み取り可能なデータがあるとコールバック関数が呼ばれて処理されます。
+
+```python
+b["output"].open_perf_buffer(print_event)
+while True:
+    b.perf_buffer_poll()
+```
+
+最初の`hello.py`との違いは、データをこのプログラム内で定義したring buffer mapを使用してやり取りしているところです。
+そのため`/sys/kernel/debug/tracing/trace_pipe`は使用していません。
+
+ring buffer mapの使い方だけでなく、ユーザIDやプロセスIDをなどコンテキスト情報を取得するヘルパー関数も紹介しました。
+コンテキスト情報を取得するヘルパー関数は7章でも紹介します。
+
+
+
+
+
+
 
