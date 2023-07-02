@@ -4,8 +4,10 @@ from bcc import BPF
 import ctypes as ct
 
 program = """
+// BPF_MAP_TYPE_PROG_ARRAYを使用するためのマクロ定義
 BPF_PROG_ARRAY(syscall, 300);
 
+// sys_enter_raw_tracepointにアタッチするプログラム、システムコールが呼ばれるたびにヒットする
 int hello(struct bpf_raw_tracepoint_args *ctx) {
     int opcode = ctx->args[1];
     syscall.call(ctx, opcode);
