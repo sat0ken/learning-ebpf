@@ -36,6 +36,9 @@ eBPF virtual machineは0-9の番号が割り当てられた10個の汎用レジ�
 eBPFプログラムが実行されると、stateを追跡するためにこれらのレジスタに値が格納されます。
 
 eBPF virtual machineにあるeBPFレジスタはソフトウェアで実装されていることを理解することが重要です。
+Linuxカーネルの[bpf.hヘッダーファイル](https://elixir.bootlin.com/linux/v5.19.17/source/include/uapi/linux/bpf.h)でBPF_REG_0からBPF_REG_10
+がenumで宣言されていることがわかります。
+
 
 
 
