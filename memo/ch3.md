@@ -39,7 +39,41 @@ eBPF virtual machineにあるeBPFレジスタはソフトウェアで実装さ�
 Linuxカーネルの[bpf.hヘッダーファイル](https://elixir.bootlin.com/linux/v5.19.17/source/include/uapi/linux/bpf.h)でBPF_REG_0からBPF_REG_10
 がenumで宣言されていることがわかります。
 
+eBPFプログラムの引数は実行前にレジスタ1に格納されます。戻り値はレジスタ0に格納されます。
+プログラムの関数を実行する前に、関数の引数はレジスタ1からレジスタ5に格納されます。
 
+
+## eBPF Instructions
+
+[bpf.hヘッダーファイル](https://elixir.bootlin.com/linux/v5.19.17/source/include/uapi/linux/bpf.h)には`bpf_insn`構造体
+が定義されています。
+
+```
+struct bpf_insn {
+	__u8	code;		/* 1. opcode */
+	__u8	dst_reg:4;	/* 2. dest register */
+	__u8	src_reg:4;	/* 3. source register */
+	__s16	off;		/* signed offset */
+	__s32	imm;		/* signed immediate constant */
+};
+```
+
+1. 各命令にはオペレーションコードがあり、命令が実行する操作を定義しています。例えばレジスタに値を追加したり、
+別のプログラムにジャンプするといった内容です。[Unofficial eBPF spec](https://github.com/iovisor/bpf-docs/blob/master/eBPF.md#unofficial-ebpf-spec)には有効な命令リストが記載されています。
+2. 様々な命令には2つのレジスタが関係することがあります。
+3. 操作によりオフセット値や即時整数値が存在する場合があります。
+
+`bpf_insn`構造体は64bit(8byte)長です。ただし命令によっては8byteを超える場合があります。レジスタの値を64bitにしたい場合、その値を構造体にセットすることはできません。そのような場合、命令は合計16byte長のワイド命令エンコードを使用します。
+
+カーネルにロードされるとbytecodeのeBPFプログラムは、`bpf_insn`構造体として表されます。
+検証プログラムはこの情報に対していくつかのチェックを行い、安全に実行できるか確認します。検証プロセスについては第6章で扱います。
+
+様々なオペレーションコードはほとんど以下のカテゴリに分類されます。
+
+- レジスタに値をロードする
+- レジスタの値をメモリに保存する
+- レジスタの値を加算するなど算術演算の実行
+- 特定の条件を満たしたら別の命令にジャンプする
 
 
 
